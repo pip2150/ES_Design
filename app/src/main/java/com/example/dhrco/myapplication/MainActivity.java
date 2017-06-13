@@ -11,6 +11,7 @@ import org.opencv.android.CameraBridgeViewBase;
 import org.opencv.android.JavaCameraView;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
+import org.opencv.android.Utils;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint;
@@ -134,15 +135,17 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
         mRgba = inputFrame.rgba();
 
-        /* Grayscale 변환 */
+        /* 그레이스케일 변환 */
         Imgproc.cvtColor(mRgba, imgGray, Imgproc.COLOR_RGB2GRAY);
 
-        /* 윤관석 도출 */
+        /* 영상 이진화 */
         Imgproc.Canny(imgGray, imgCanny, 50, 100);
 
+        /* 윤곽 검출 */
         Vector<MatOfPoint> contours = new Vector<MatOfPoint>();
         md.mfindContours(imgCanny, contours, MarkerDetector.MINContourPointsAllowed);
 
+        /* 후보 검색 */
         Vector<Marker> detectedMarkers = new Vector<Marker>();
         md.findCandidates(contours, detectedMarkers);
         md.drawMarker(imgGray,detectedMarkers);
@@ -150,6 +153,8 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 //        Vector<Mat> canonicalMarkers = new Vector<Mat>();
 //        md.warpMarkers(imgGray,canonicalMarkers, detectedMarkers);
 
+        /* mat To Bitmap */
+        //Utils.matToBitmap();
         return imgGray;
     }
 }

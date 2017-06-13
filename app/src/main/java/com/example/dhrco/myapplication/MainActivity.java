@@ -18,9 +18,13 @@ import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.Point;
 import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
+import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 
 import java.util.Vector;
+
+import static java.lang.Math.pow;
+import static java.lang.Math.sqrt;
 
 public class MainActivity extends AppCompatActivity implements CameraBridgeViewBase.CvCameraViewListener2 {
 
@@ -31,7 +35,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
     JavaCameraView javaCameraView;
     private static String TAG= "MainActivity";
-    Mat mRgba, imgGray, imgCanny;
+    Mat mRgba, imgGray, imgCanny, imgContours;
     BaseLoaderCallback mloaderCallback = new BaseLoaderCallback(this) {
         @Override
         public void onManagerConnected(int status){
@@ -116,6 +120,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         mRgba = new Mat(height, width, CvType.CV_8UC4);
         imgGray = new Mat(height, width, CvType.CV_8UC4);
         imgCanny = new Mat(height, width, CvType.CV_8UC4);
+        imgContours = new Mat(height, width, CvType.CV_8UC4);
     }
 
     @Override
@@ -140,31 +145,12 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
         Vector<Marker> detectedMarkers = new Vector<Marker>();
         md.findCandidates(contours, detectedMarkers);
-        Mat contoursfound = new Mat(imgCanny.size(), 0, new Scalar(255));
-        Imgproc.drawContours(contoursfound, contours, -1, new Scalar(1), 2);
+        md.drawMarker(imgGray,detectedMarkers);
 
-        Vector<MatOfPoint> detectedPoints = new Vector<MatOfPoint>();
-        for (int i = 0; i < detectedMarkers.size(); i++) {
-            MatOfPoint tmp = new MatOfPoint();
-            for (int j = 0; j < detectedMarkers.get(i).points.size().area(); j++) {
-                tmp.push_back(new MatOfPoint(new Point(detectedMarkers.get(i).points.toArray()[j].x, detectedMarkers.get(i).points.toArray()[j].y)));
-            }
-            detectedPoints.add(tmp);
-        }
-        for (int i = 0; i < detectedPoints.size(); i++) {
-            if (detectedPoints.get(i).size().area() == 4) {
-                MatOfPoint points = detectedPoints.get(i);
-                int x = Math.min((int)points.toArray()[2].x, (int)points.toArray()[3].x);
-                int y = Math.min((int)points.toArray()[3].y, (int)points.toArray()[0].y);
-                int width = Math.max((int)points.toArray()[0].x, (int)points.toArray()[1].x) - x;
-                int height = Math.max((int)points.toArray()[1].y, (int)points.toArray()[2].y) - y;
-                Rect area = new Rect(x, y, width, height);
-                Imgproc.rectangle(imgGray, new Point(x,y), new Point(x+width,y+height), new Scalar(255));
-//                Imgproc.rectangle(imgGray, area, new Scalar(255), 2);
-            }
-        }
+//        Vector<Mat> canonicalMarkers = new Vector<Mat>();
+//        md.warpMarkers(imgGray,canonicalMarkers, detectedMarkers);
 
-        return contoursfound;
+        return imgGray;
     }
 }
 

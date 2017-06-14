@@ -140,6 +140,7 @@ public class MarkerDetector {
                 int height = Math.max((int)points.get(1).y, (int)points.get(2).y) - y;
                 Rect area = new Rect(x, y, width, height);
                 rects.add(area);
+                Log.d("area", area.toString());
             }
         }
     }

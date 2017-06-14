@@ -1,5 +1,7 @@
 package com.example.dhrco.myapplication;
 
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
@@ -22,12 +24,37 @@ import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.net.Socket;
+import java.util.List;
 import java.util.Vector;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 import static java.lang.Math.pow;
 import static java.lang.Math.sqrt;
 
 public class MainActivity extends AppCompatActivity implements CameraBridgeViewBase.CvCameraViewListener2 {
+
+    final String serverIP = "isk.iptime.org";
+    final int serverPort = 6463;
+    Socket sock;
+    BufferedReader sock_in;
+    PrintWriter sock_out;
+
+    private static final int INPUT_SIZE = 28;
+    private static final String INPUT_NAME = "input";
+    private static final String OUTPUT_NAME = "output";
+
+    private static final String MODEL_FILE = "file:///android_asset/mnist_model_graph.pb";
+    private static final String LABEL_FILE = "file:///android_asset/graph_label_strings.txt";
+
+    private Classifier classifier;
+    private Executor executor = Executors.newSingleThreadExecutor();
+    static String floor="";
 
     // Used to load the 'native-lib' library on application startup.
 //    static {
@@ -74,6 +101,40 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        Thread PrepareSoc = new Thread() {
+            public void run() {
+                try {
+                    sock = new Socket(serverIP, serverPort);
+                    Log.i("insu", "connecting!");
+                    sock_out = new PrintWriter(sock.getOutputStream(), true);
+                    sock_in = new BufferedReader(new InputStreamReader(sock.getInputStream()));
+                    sock_out.println("camera");
+
+                    while(true){
+                        try{
+                            Thread.sleep(1000);
+                        }
+                        catch(Exception e){
+                            e.printStackTrace();
+                        }
+                        sock_out.println(floor);
+
+                    }
+                } catch (IOException e) {
+                    Log.i("insu", e.toString());
+                    e.printStackTrace();
+                }
+            }
+        };
+        PrepareSoc.start();
+        initTensorFlowAndLoadModel();
+        try{
+            Thread.sleep(2000);
+        }
+        catch(Exception e){
+            e.printStackTrace();
+        }
+
         javaCameraView = (JavaCameraView) findViewById(R.id.java_camera_view);
         javaCameraView.setVisibility(SurfaceView.VISIBLE);
         javaCameraView.setCvCameraViewListener(this);
@@ -81,6 +142,27 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 //        // Example of a call to a native method
 //        TextView tv = (TextView) findViewById(R.id.sample_text);
 //        tv.setText(stringFromJNI());
+    }
+
+    private void initTensorFlowAndLoadModel() {
+        executor.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    classifier = TensorFlowImageClassifier.create(
+                            getAssets(),
+                            MODEL_FILE,
+                            LABEL_FILE,
+                            INPUT_SIZE,
+                            INPUT_NAME,
+                            OUTPUT_NAME);
+                    //makeButtonVisible();
+                    Log.i("insu", "Load Success");
+                } catch (final Exception e) {
+                    throw new RuntimeException("Error initializing TensorFlow!", e);
+                }
+            }
+        });
     }
 
     @Override
@@ -148,13 +230,50 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         /* 후보 검색 */
         Vector<Marker> detectedMarkers = new Vector<Marker>();
         md.findCandidates(contours, detectedMarkers);
-        md.drawMarker(imgGray,detectedMarkers);
+        Vector<Rect> rects = new Vector<Rect>();
+        md.findRectangle(detectedMarkers, rects);
+        md.drawMarker(imgGray,rects);
 
-//        Vector<Mat> canonicalMarkers = new Vector<Mat>();
-//        md.warpMarkers(imgGray,canonicalMarkers, detectedMarkers);
+        Vector<Mat> canonicalMarkers = new Vector<Mat>();
+        md.warpMarkers(imgGray,canonicalMarkers, detectedMarkers);
 
+
+        Log.i("insu", "where0");
+        Mat tmp = null;
+        if(canonicalMarkers.size()>0){
+            tmp = canonicalMarkers.get(0);
+
+            Log.i("insu", "where1");
+            Bitmap src = Bitmap.createBitmap(tmp.cols(), tmp.rows(), Bitmap.Config.ARGB_8888);
+            Log.i("insu", "where2");
         /* mat To Bitmap */
-        //Utils.matToBitmap();
+            Utils.matToBitmap(tmp, src);
+            Log.i("insu", "here");
+
+            Bitmap bm = Bitmap.createScaledBitmap(src, 28, 28, true);
+
+            int width = bm.getWidth();
+            int height = bm.getHeight();
+
+            // Get 28x28 pixel data from bitmap
+            int[] pixels = new int[width * height];
+            bm.getPixels(pixels, 0, width, 0, 0, width, height);
+            float[] retPixels = new float[pixels.length];
+            for (int i = 0; i < pixels.length; ++i) {
+                // Set 0 for white and 255 for black pixel
+                int pix = pixels[i];
+                int b = pix & 0xff;
+                retPixels[i] = 0xff - b;
+            }
+            Log.i("insu", "where1");
+            final List<Classifier.Recognition> results = classifier.recognizeImage(retPixels);
+            Log.i("insu", "where2");
+
+            if (results.size() > 0) {
+                floor = ""+results.get(0).getTitle();
+            }
+        }
+
         return imgGray;
     }
 }

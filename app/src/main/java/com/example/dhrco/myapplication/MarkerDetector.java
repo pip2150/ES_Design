@@ -74,24 +74,24 @@ public class MarkerDetector {
             MatOfPoint2f contour = new MatOfPoint2f();
             contours.get(i).convertTo(contour, CvType.CV_32FC2);
 
-			/* 다각형 근사화*/
+         /* 다각형 근사화*/
             double eps = contours.get(i).size().area() * 0.05;
             Log.d("eps",String.valueOf(eps));
             Imgproc.approxPolyDP(contour, approxCurve, eps, true);
 
-			/* 사각형 검사*/
+         /* 사각형 검사*/
             Log.d("approxCurve Size",String.valueOf(approxCurve.toList().size()));
             if (approxCurve.toList().size() != 4)
                 continue;
 
-			/* 볼록 여부 검사*/
+         /* 볼록 여부 검사*/
             MatOfPoint mat = new MatOfPoint();
             approxCurve.convertTo(mat, CvType.CV_32SC2);
-			Log.d("isContourConvex", String.valueOf(Imgproc.isContourConvex(mat)));
+            Log.d("isContourConvex", String.valueOf(Imgproc.isContourConvex(mat)));
             if (!Imgproc.isContourConvex(mat))
                 continue;
 
-			/* 최소 거리 측정 및 비교 */
+         /* 최소 거리 측정 및 비교 */
             //float minDist = numeric_limits<float>::max();
             float minDist = Float.MAX_VALUE;
 
@@ -106,14 +106,14 @@ public class MarkerDetector {
             if (minDist < m_minContourLengthAllowd)
                 continue;
 
-			/* 후보 저장 */
+         /* 후보 저장 */
             Marker m = new Marker(4, new Vector<Point>());
             Log.d("m",m.toString());
             for (int j = 0; j < 4; j++)
                 m.points.add(new Point(approxCurve.toArray()[j].x, approxCurve.toArray()[j].y));
 
 
-			/* 후보 시계 방향 정렬*/
+         /* 후보 시계 방향 정렬*/
             Point v1 = new Point(m.points.get(1).x- m.points.get(0).x,m.points.get(1).y- m.points.get(0).y) ;
             Point v2 = new Point(m.points.get(2).x- m.points.get(0).x,m.points.get(2).y- m.points.get(0).y) ;
 
@@ -130,7 +130,7 @@ public class MarkerDetector {
         }
     }
 
-    public void drawMarker(Mat grayscale, Vector<Marker> detectedMarkers) {
+    public void findRectangle(Vector<Marker> detectedMarkers, Vector<Rect> rects) {
         for (int i = 0; i < detectedMarkers.size(); i++) {
             if (detectedMarkers.get(i).points.size() == 4) {
                 Vector<Point> points = detectedMarkers.get(i).points;
@@ -139,9 +139,15 @@ public class MarkerDetector {
                 int width = Math.max((int)points.get(0).x, (int)points.get(1).x) - x;
                 int height = Math.max((int)points.get(1).y, (int)points.get(2).y) - y;
                 Rect area = new Rect(x, y, width, height);
-                //Imgproc.rectangle(imgGray, new Point(area.x, area.y), new Point(area.x + area.width, area.y + area.height),new Scalar(0, 255, 0));
-                Imgproc.rectangle(grayscale, new Point(x,y), new Point(x+width,y+height), new Scalar(255));
+                rects.add(area);
             }
+        }
+    }
+
+    public void drawMarker(Mat grayscale, Vector<Rect> rects) {
+        for (int i = 0; i < rects.size(); i++) {
+            Rect area = rects.get(i);
+            Imgproc.rectangle(grayscale, new Point(area.x, area.y), new Point(area.x + area.width, area.y + area.height),new Scalar(0, 255, 0));
         }
     }
 
@@ -149,13 +155,15 @@ public class MarkerDetector {
         for (int i = 0; i < detectedMarkers.size(); i++) {
             if (detectedMarkers.get(i).points.size() == 4) {
                 Mat canonicalMarker = new Mat(img.height(), img.width(), CvType.CV_8UC4);
+                Log.d("img_height",String.valueOf(img.height()));
+                Log.d("img_width",String.valueOf(img.width()));
                 Marker marker = detectedMarkers.get(i);
-                Point src[] = new Point[4];
+                Point[] src = new Point[4];
 
                 for (int j = 0; j < marker.points.size(); j++) {
-                    src[j] = marker.points.get(i);
+                    src[j] = marker.points.get(j);
                 }
-
+                Log.d("src",src.toString());
                 double w1 = sqrt(pow(src[2].x - src[3].x, 2)
                         + pow(src[2].x - src[3].x, 2));
                 double w2 = sqrt(pow(src[1].x - src[0].x, 2)
@@ -176,9 +184,22 @@ public class MarkerDetector {
                         new Point(0,maxHeight - 1) };
 
                 Mat M = Imgproc.getPerspectiveTransform(new MatOfPoint2f(src), new MatOfPoint2f(m_markerCorners2d));
+                Log.d("Mat_M",M.toString());
                 Imgproc.warpPerspective(img, canonicalMarker, M, markerSize);
                 canonicalMarkers.add(canonicalMarker);
             }
+        }
+    }
+
+
+    public void cuT(Mat img, Vector<Rect> rects, Vector<Mat> cuts) {
+        for(int i=0;i<rects.size();i++){
+            Mat cut = new Mat(img.height(), img.width(), CvType.CV_8UC4);
+            Rect rect = rects.get(i);
+            Point[] src = { new Point(rect.x,rect.y),new Point(rect.x+rect.width,rect.y),new Point(rect.x,rect.y+rect.height),new Point(rect.x+rect.width,rect.y+rect.height)};
+            Mat M = Imgproc.getPerspectiveTransform(new MatOfPoint2f(src), new MatOfPoint2f(src));
+            Imgproc.warpPerspective(img, cut, M, rect.size());
+            cuts.add(cut);
         }
     }
 }

@@ -3,6 +3,7 @@ package com.example.dhrco.myapplication;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Handler;
+import android.os.Message;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
@@ -39,7 +40,9 @@ import java.util.List;
 import java.util.Vector;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RunnableFuture;
 
+import static android.R.attr.bitmap;
 import static android.R.attr.delay;
 import static java.lang.Math.pow;
 import static java.lang.Math.random;
@@ -50,14 +53,15 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
     final String serverIP = "isk.iptime.org";
     final int serverPort = 6463;
+    int iv_id[] = {R.id.imageview0,R.id.imageview1,R.id.imageview2,R.id.imageview3,R.id.imageview4,R.id.imageview5,R.id.imageview6,R.id.imageview7,R.id.imageview8};
     Socket sock;
     BufferedReader sock_in;
     PrintWriter sock_out;
-    ImageView iv;
-    Bitmap src;
-    Bitmap bm;
-    Vector<Bitmap> bitmapInput;
+    ImageView iv[] = new ImageView[9];
     TextView tv;
+
+    Vector<Bitmap> bitmapOut = new Vector<Bitmap>();
+    static Handler handler = new Handler();
 
     private static final int INPUT_SIZE = 28;
     private static final String INPUT_NAME = "input";
@@ -110,7 +114,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        Thread PrepareSoc = new Thread() {
+        new Thread() {
             public void run() {
                 try {
                     sock = new Socket(serverIP, serverPort);
@@ -132,10 +136,9 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                     e.printStackTrace();
                 }
             }
-        };
-
-        PrepareSoc.start();
-        iv = (ImageView) findViewById(R.id.imageview);
+        }.start();
+        for(int i=0;i<iv_id.length;i++)
+            iv[i] = (ImageView) findViewById(iv_id[i]);
         tv = (TextView) findViewById(R.id.textview);
         initTensorFlowAndLoadModel();
 
@@ -238,63 +241,20 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         }
 
         /* TensorFlow 이미지 처리 */
-        tensorFlowProcessing(canonicalMarkers);
+        TensorFlowProcesser tensorFlowProcesser = new TensorFlowProcesser();
+        floors = tensorFlowProcesser.processing(classifier, canonicalMarkers, bitmapOut);
+
+        handler.post(new RunImgRenw());
 
         return imgGray;
     }
 
-    void tensorFlowProcessing(Vector<Mat> canonicalMarkers){
-        floors = "";
-        String floor = null;
-        Log.d(TAG+"CMSize", String.valueOf(canonicalMarkers.size()));
-
-        for(int j=0;j<canonicalMarkers.size();j++){
-            Mat tmp = canonicalMarkers.get(j);
-            //tmp = imgGray;
-
-            src = Bitmap.createBitmap(tmp.cols(), tmp.rows(), Bitmap.Config.ARGB_8888);
-//            src = BitmapFactory.decodeResource(getResources(), R.drawable.six);
-
-            /* mat To Bitmap */
-            Utils.matToBitmap(tmp, src);
-            bm = Bitmap.createScaledBitmap(src, 28, 28, true);
-
-            iv.setImageBitmap(bm);
-
-            int width = bm.getWidth();
-            int height = bm.getHeight();
-
-            // Get 28x28 pixel data from bitmap
-            int[] pixels = new int[width * height];
-            bm.getPixels(pixels, 0, width, 0, 0, width, height);
-
-            float[] retPixels = new float[pixels.length];
-            for (int i = 0; i < pixels.length; ++i) {
-                // Set 0 for white and 255 for black pixel
-                int pix = pixels[i];
-                int b = pix & 0xff;
-                //retPixels[i] = 0xff - b;
-                retPixels[i] = b;
-
-                if(retPixels[i]>170){
-                    retPixels[i] = 0xff;
-                }
-                else{
-                    retPixels[i] = 0;
-                }
-                pixels[i] = 0x00;
+    public class RunImgRenw implements Runnable{
+        @Override
+        public void run() {
+            for(int i=0;i<Math.min(bitmapOut.size(),9);i++){
+                iv[i].setImageBitmap(bitmapOut.get(i));
             }
-            //bm.setPixels(pixels, 0, width, 0, 0, width, height);
-
-            final List<Classifier.Recognition> results = classifier.recognizeImage(retPixels);
-            if (results.size() > 0) {
-                floor = results.get(0).getTitle();
-                Log.d(TAG+":floor", String.valueOf(floor));
-            }
-
-            floors += floor;
-            Log.i(TAG+":floors", String.valueOf(floors));
-
         }
     }
 }

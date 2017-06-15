@@ -6,6 +6,7 @@ import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.SurfaceView;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import org.opencv.android.BaseLoaderCallback;
@@ -44,6 +45,11 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     Socket sock;
     BufferedReader sock_in;
     PrintWriter sock_out;
+
+    ImageView iv;
+    Bitmap src;
+    Bitmap bm;
+    TextView tv;
 
     private static final int INPUT_SIZE = 28;
     private static final String INPUT_NAME = "input";
@@ -127,21 +133,13 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             }
         };
         PrepareSoc.start();
+        iv = (ImageView) findViewById(R.id.imageview);
+        tv = (TextView) findViewById(R.id.textview);
         initTensorFlowAndLoadModel();
-        try{
-            Thread.sleep(2000);
-        }
-        catch(Exception e){
-            e.printStackTrace();
-        }
 
         javaCameraView = (JavaCameraView) findViewById(R.id.java_camera_view);
         javaCameraView.setVisibility(SurfaceView.VISIBLE);
         javaCameraView.setCvCameraViewListener(this);
-
-//        // Example of a call to a native method
-//        TextView tv = (TextView) findViewById(R.id.sample_text);
-//        tv.setText(stringFromJNI());
     }
 
     private void initTensorFlowAndLoadModel() {
@@ -237,20 +235,19 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         Vector<Mat> canonicalMarkers = new Vector<Mat>();
         md.warpMarkers(imgGray,canonicalMarkers, detectedMarkers);
 
-
         Log.i("insu", "where0");
         Mat tmp = null;
-        if(canonicalMarkers.size()>0){
-            tmp = canonicalMarkers.get(0);
+        if(canonicalMarkers.size()>-1){
+            //tmp = canonicalMarkers.get(0);
+            tmp = imgGray;
 
             Log.i("insu", "where1");
-            Bitmap src = Bitmap.createBitmap(tmp.cols(), tmp.rows(), Bitmap.Config.ARGB_8888);
+            src = Bitmap.createBitmap(tmp.cols(), tmp.rows(), Bitmap.Config.ARGB_8888);
+//            src = BitmapFactory.decodeResource(getResources(), R.drawable.six);
             Log.i("insu", "where2");
         /* mat To Bitmap */
             Utils.matToBitmap(tmp, src);
-            Log.i("insu", "here");
-
-            Bitmap bm = Bitmap.createScaledBitmap(src, 28, 28, true);
+            bm = Bitmap.createScaledBitmap(src, 28, 28, true);
 
             int width = bm.getWidth();
             int height = bm.getHeight();
@@ -258,22 +255,46 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             // Get 28x28 pixel data from bitmap
             int[] pixels = new int[width * height];
             bm.getPixels(pixels, 0, width, 0, 0, width, height);
+            Log.i("insu", "where3");
             float[] retPixels = new float[pixels.length];
             for (int i = 0; i < pixels.length; ++i) {
                 // Set 0 for white and 255 for black pixel
                 int pix = pixels[i];
                 int b = pix & 0xff;
-                retPixels[i] = 0xff - b;
-            }
-            Log.i("insu", "where1");
-            final List<Classifier.Recognition> results = classifier.recognizeImage(retPixels);
-            Log.i("insu", "where2");
+//                retPixels[i] = 0xff - b;
+                retPixels[i] = b;
 
+                if(retPixels[i]>170){
+                    retPixels[i] = 0xff;
+                }else{
+                    retPixels[i] = 0;
+                }
+                pixels[i] = 0x00;
+            }
+//            bm.setPixels(pixels, 0, width, 0, 0, width, height);
+            Log.i("insu", "where4");
+            final List<Classifier.Recognition> results = classifier.recognizeImage(retPixels);
             if (results.size() > 0) {
                 floor = ""+results.get(0).getTitle();
             }
+            Log.i("insu", "where5");
+            new Thread(new Runnable()
+            {
+                @Override
+                public void run()
+                {
+                    runOnUiThread(new Runnable()
+                    {
+                        @Override
+                        public void run()
+                        {
+                            //iv.setImageBitmap(src);
+                            tv.setText("Number : "+floor);
+                        }
+                    });
+                }
+            }).start();
         }
-
         return imgGray;
     }
 }

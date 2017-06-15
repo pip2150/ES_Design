@@ -149,7 +149,7 @@ public class MarkerDetector {
         for (int i = 0; i < rects.size(); i++) {
             Rect area = rects.get(i);
             Log.d("area", area.toString());
-            Imgproc.rectangle(grayscale, new Point(area.x, area.y), new Point(area.x + area.width, area.y + area.height),new Scalar(0, 255, 0));
+            Imgproc.rectangle(grayscale, new Point(area.x, area.y), new Point(area.x + area.width, area.y + area.height),new Scalar(255));
             Log.d("Rectangle start", new Point(area.x, area.y).toString());
             Log.d("Rectangle end", new Point(area.x + area.width, area.y + area.height).toString());
         }

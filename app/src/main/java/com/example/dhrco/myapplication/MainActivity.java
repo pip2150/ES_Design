@@ -2,10 +2,12 @@ package com.example.dhrco.myapplication;
 
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.os.Handler;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.SurfaceView;
+import android.view.View;
 import android.widget.ImageView;
 import android.widget.TextView;
 
@@ -26,6 +28,9 @@ import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
@@ -35,8 +40,11 @@ import java.util.Vector;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
+import static android.R.attr.delay;
 import static java.lang.Math.pow;
+import static java.lang.Math.random;
 import static java.lang.Math.sqrt;
+import static org.opencv.core.CvType.CV_8UC3;
 
 public class MainActivity extends AppCompatActivity implements CameraBridgeViewBase.CvCameraViewListener2 {
 
@@ -45,10 +53,10 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     Socket sock;
     BufferedReader sock_in;
     PrintWriter sock_out;
-
     ImageView iv;
     Bitmap src;
     Bitmap bm;
+    Vector<Bitmap> bitmapInput;
     TextView tv;
 
     private static final int INPUT_SIZE = 28;
@@ -60,7 +68,8 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
     private Classifier classifier;
     private Executor executor = Executors.newSingleThreadExecutor();
-    static String floor="";
+
+    String floors="빈칸";
 
     // Used to load the 'native-lib' library on application startup.
 //    static {
@@ -96,12 +105,6 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         }
     }
 
-//    static{
-//        if(){
-//
-//        }
-//    }
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -111,7 +114,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             public void run() {
                 try {
                     sock = new Socket(serverIP, serverPort);
-                    Log.i("insu", "connecting!");
+                    Log.i(TAG, "Network Connecting!");
                     sock_out = new PrintWriter(sock.getOutputStream(), true);
                     sock_in = new BufferedReader(new InputStreamReader(sock.getInputStream()));
                     sock_out.println("camera");
@@ -123,15 +126,14 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                         catch(Exception e){
                             e.printStackTrace();
                         }
-                        sock_out.println(floor);
-
+                        sock_out.println(floors);
                     }
                 } catch (IOException e) {
-                    Log.i("insu", e.toString());
                     e.printStackTrace();
                 }
             }
         };
+
         PrepareSoc.start();
         iv = (ImageView) findViewById(R.id.imageview);
         tv = (TextView) findViewById(R.id.textview);
@@ -147,15 +149,9 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             @Override
             public void run() {
                 try {
-                    classifier = TensorFlowImageClassifier.create(
-                            getAssets(),
-                            MODEL_FILE,
-                            LABEL_FILE,
-                            INPUT_SIZE,
-                            INPUT_NAME,
-                            OUTPUT_NAME);
+                    classifier = TensorFlowImageClassifier.create(getAssets(), MODEL_FILE, LABEL_FILE, INPUT_SIZE, INPUT_NAME, OUTPUT_NAME);
                     //makeButtonVisible();
-                    Log.i("insu", "Load Success");
+                    Log.i(TAG, "Load Success");
                 } catch (final Exception e) {
                     throw new RuntimeException("Error initializing TensorFlow!", e);
                 }
@@ -190,12 +186,6 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         }
     }
 
-    /**
-     * A native method that is implemented by the 'native-lib' native library,
-     * which is packaged with this application.
-     */
-    //public native String stringFromJNI();
-
     @Override
     public void onCameraViewStarted(int width, int height) {
         mRgba = new Mat(height, width, CvType.CV_8UC4);
@@ -215,6 +205,8 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
         mRgba = inputFrame.rgba();
 
+        Log.d(TAG+":CameraSize", String.valueOf(mRgba.size().width)+" * "+String.valueOf(mRgba.size().height));
+
         /* 그레이스케일 변환 */
         Imgproc.cvtColor(mRgba, imgGray, Imgproc.COLOR_RGB2GRAY);
 
@@ -230,24 +222,44 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         md.findCandidates(contours, detectedMarkers);
         Vector<Rect> rects = new Vector<Rect>();
         md.findRectangle(detectedMarkers, rects);
-        md.drawMarker(imgGray,rects);
+        //md.drawMarker(imgGray,rects);
 
+        /* 직사각형 2D 변환 */
         Vector<Mat> canonicalMarkers = new Vector<Mat>();
         md.warpMarkers(imgGray,canonicalMarkers, detectedMarkers);
 
-        Log.i("insu", "where0");
-        Mat tmp = null;
-        if(canonicalMarkers.size()>-1){
-            //tmp = canonicalMarkers.get(0);
-            tmp = imgGray;
+        /* 관심영역 중 숫자를 Vector<Rect>로 추출 */
+        Vector<Vector<Rect>> rects_numbers = new Vector<Vector<Rect>>();
+        md.extractNumbers(canonicalMarkers, rects_numbers, rects);
 
-            Log.i("insu", "where1");
+        /* Vector<Rect> 그리기 */
+        for(int i=0;i<rects_numbers.size();i++){
+            md.drawMarker(imgGray,rects_numbers.get(i));
+        }
+
+        /* TensorFlow 이미지 처리 */
+        tensorFlowProcessing(canonicalMarkers);
+
+        return imgGray;
+    }
+
+    void tensorFlowProcessing(Vector<Mat> canonicalMarkers){
+        floors = "";
+        String floor = null;
+        Log.d(TAG+"CMSize", String.valueOf(canonicalMarkers.size()));
+
+        for(int j=0;j<canonicalMarkers.size();j++){
+            Mat tmp = canonicalMarkers.get(j);
+            //tmp = imgGray;
+
             src = Bitmap.createBitmap(tmp.cols(), tmp.rows(), Bitmap.Config.ARGB_8888);
 //            src = BitmapFactory.decodeResource(getResources(), R.drawable.six);
-            Log.i("insu", "where2");
-        /* mat To Bitmap */
+
+            /* mat To Bitmap */
             Utils.matToBitmap(tmp, src);
             bm = Bitmap.createScaledBitmap(src, 28, 28, true);
+
+            iv.setImageBitmap(bm);
 
             int width = bm.getWidth();
             int height = bm.getHeight();
@@ -255,47 +267,35 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             // Get 28x28 pixel data from bitmap
             int[] pixels = new int[width * height];
             bm.getPixels(pixels, 0, width, 0, 0, width, height);
-            Log.i("insu", "where3");
+
             float[] retPixels = new float[pixels.length];
             for (int i = 0; i < pixels.length; ++i) {
                 // Set 0 for white and 255 for black pixel
                 int pix = pixels[i];
                 int b = pix & 0xff;
-//                retPixels[i] = 0xff - b;
+                //retPixels[i] = 0xff - b;
                 retPixels[i] = b;
 
                 if(retPixels[i]>170){
                     retPixels[i] = 0xff;
-                }else{
+                }
+                else{
                     retPixels[i] = 0;
                 }
                 pixels[i] = 0x00;
             }
-//            bm.setPixels(pixels, 0, width, 0, 0, width, height);
-            Log.i("insu", "where4");
+            //bm.setPixels(pixels, 0, width, 0, 0, width, height);
+
             final List<Classifier.Recognition> results = classifier.recognizeImage(retPixels);
             if (results.size() > 0) {
-                floor = ""+results.get(0).getTitle();
+                floor = results.get(0).getTitle();
+                Log.d(TAG+":floor", String.valueOf(floor));
             }
-            Log.i("insu", "where5");
-            new Thread(new Runnable()
-            {
-                @Override
-                public void run()
-                {
-                    runOnUiThread(new Runnable()
-                    {
-                        @Override
-                        public void run()
-                        {
-                            //iv.setImageBitmap(src);
-                            tv.setText("Number : "+floor);
-                        }
-                    });
-                }
-            }).start();
+
+            floors += floor;
+            Log.i(TAG+":floors", String.valueOf(floors));
+
         }
-        return imgGray;
     }
 }
 

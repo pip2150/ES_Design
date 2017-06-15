@@ -18,7 +18,6 @@
                 android:id="@+id/imageview"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:src="@drawable/dog"
                 />
             <TextView
                 android:id="@+id/textview"
@@ -27,7 +26,7 @@
                 />
         </LinearLayout>
 
-        <org.opencv.android.JavaCameraView
+            <org.opencv.android.JavaCameraView
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:id="@+id/java_camera_view"

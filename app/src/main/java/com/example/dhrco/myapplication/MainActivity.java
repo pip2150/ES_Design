@@ -50,39 +50,37 @@ import static java.lang.Math.sqrt;
 import static org.opencv.core.CvType.CV_8UC3;
 
 public class MainActivity extends AppCompatActivity implements CameraBridgeViewBase.CvCameraViewListener2 {
+    private static String TAG= "MainActivity";
 
     final String serverIP = "isk.iptime.org";
     final int serverPort = 6463;
-    int iv_id[] = {R.id.imageview0,R.id.imageview1,R.id.imageview2,R.id.imageview3,R.id.imageview4,R.id.imageview5,R.id.imageview6,R.id.imageview7,R.id.imageview8};
-    Socket sock;
-    BufferedReader sock_in;
-    PrintWriter sock_out;
-    ImageView iv[] = new ImageView[9];
-    TextView tv;
 
-    Vector<Bitmap> bitmapOut = new Vector<Bitmap>();
-    static Handler handler = new Handler();
+    private Socket sock;
+    private BufferedReader sock_in;
+    private PrintWriter sock_out;
+
+    private int iv_id[] = {R.id.imageview0,R.id.imageview1,R.id.imageview2,R.id.imageview3,R.id.imageview4,R.id.imageview5,R.id.imageview6,R.id.imageview7,R.id.imageview8};
+    private ImageView iv[] = new ImageView[9];
+    private TextView tv;
+    private Vector<Bitmap> bitmapOut = new Vector<Bitmap>();
+    private String floors="빈칸";
+
+    private static Handler handler;
+
+    private TensorFlowProcesser tensorFlowProcesser;
+    private Classifier classifier;
+    private Executor executor = Executors.newSingleThreadExecutor();
 
     private static final int INPUT_SIZE = 28;
     private static final String INPUT_NAME = "input";
     private static final String OUTPUT_NAME = "output";
-
     private static final String MODEL_FILE = "file:///android_asset/mnist_model_graph.pb";
     private static final String LABEL_FILE = "file:///android_asset/graph_label_strings.txt";
 
-    private Classifier classifier;
-    private Executor executor = Executors.newSingleThreadExecutor();
-
-    String floors="빈칸";
-
-    // Used to load the 'native-lib' library on application startup.
-//    static {
-//        System.loadLibrary("native-lib");
-//    }
-
-    JavaCameraView javaCameraView;
-    private static String TAG= "MainActivity";
+    private JavaCameraView javaCameraView;
     Mat mRgba, imgGray, imgCanny, imgContours;
+    MarkerDetector markerDetector;
+
     BaseLoaderCallback mloaderCallback = new BaseLoaderCallback(this) {
         @Override
         public void onManagerConnected(int status){
@@ -96,7 +94,6 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                     break;
                 }
             }
-
         }
     };
 
@@ -113,6 +110,10 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        tensorFlowProcesser = new TensorFlowProcesser();
+        handler = new Handler();
+        markerDetector = new MarkerDetector();
 
         new Thread() {
             public void run() {
@@ -137,9 +138,11 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 }
             }
         }.start();
+
         for(int i=0;i<iv_id.length;i++)
             iv[i] = (ImageView) findViewById(iv_id[i]);
         tv = (TextView) findViewById(R.id.textview);
+
         initTensorFlowAndLoadModel();
 
         javaCameraView = (JavaCameraView) findViewById(R.id.java_camera_view);
@@ -204,10 +207,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
     @Override
     public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
-        MarkerDetector md = new MarkerDetector();
-
         mRgba = inputFrame.rgba();
-
         Log.d(TAG+":CameraSize", String.valueOf(mRgba.size().width)+" * "+String.valueOf(mRgba.size().height));
 
         /* 그레이스케일 변환 */
@@ -218,44 +218,41 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
         /* 윤곽 검출 */
         Vector<MatOfPoint> contours = new Vector<MatOfPoint>();
-        md.mfindContours(imgCanny, contours, MarkerDetector.MINContourPointsAllowed);
+        markerDetector.mfindContours(imgCanny, contours, MarkerDetector.MINContourPointsAllowed);
 
         /* 후보 검색 */
         Vector<Marker> detectedMarkers = new Vector<Marker>();
-        md.findCandidates(contours, detectedMarkers);
+        markerDetector.findCandidates(contours, detectedMarkers);
         Vector<Rect> rects = new Vector<Rect>();
-        md.findRectangle(detectedMarkers, rects);
-        //md.drawMarker(imgGray,rects);
+        markerDetector.findRectangle(detectedMarkers, rects);
+        markerDetector.drawMarker(imgGray,rects);
 
         /* 직사각형 2D 변환 */
         Vector<Mat> canonicalMarkers = new Vector<Mat>();
-        md.warpMarkers(imgGray,canonicalMarkers, detectedMarkers);
+        markerDetector.warpMarkers(imgGray,canonicalMarkers, detectedMarkers);
 
         /* 관심영역 중 숫자를 Vector<Rect>로 추출 */
         Vector<Vector<Rect>> rects_numbers = new Vector<Vector<Rect>>();
-        md.extractNumbers(canonicalMarkers, rects_numbers, rects);
+        markerDetector.extractNumbers(canonicalMarkers, rects_numbers, rects);
 
-        /* Vector<Rect> 그리기 */
-        for(int i=0;i<rects_numbers.size();i++){
-            md.drawMarker(imgGray,rects_numbers.get(i));
-        }
+//        /* Vector<Rect> 그리기 */
+//        for(int i=0;i<rects_numbers.size();i++){
+//            md.drawMarker(imgGray,rects_numbers.get(i));
+//        }
 
         /* TensorFlow 이미지 처리 */
-        TensorFlowProcesser tensorFlowProcesser = new TensorFlowProcesser();
         floors = tensorFlowProcesser.processing(classifier, canonicalMarkers, bitmapOut);
 
-        handler.post(new RunImgRenw());
+        handler.post(new Runnable() {
+            @Override
+            public void run() {
+                for(int i=0;i<Math.min(bitmapOut.size(),9);i++){
+                    iv[i].setImageBitmap(bitmapOut.get(i));
+                }
+            }
+        });
 
         return imgGray;
-    }
-
-    public class RunImgRenw implements Runnable{
-        @Override
-        public void run() {
-            for(int i=0;i<Math.min(bitmapOut.size(),9);i++){
-                iv[i].setImageBitmap(bitmapOut.get(i));
-            }
-        }
     }
 }
 
